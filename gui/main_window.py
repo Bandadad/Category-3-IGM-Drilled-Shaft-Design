@@ -16,6 +16,7 @@ FIELD_GROUPS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
             ("gamma", "Unit weight, gamma (kN/m^3)", "Representative geomaterial unit weight."),
             ("n60", "Corrected SPT N60 (blows/0.3 m)", "Primary Mayne-Harris correlation input."),
             ("nu", "Poisson's ratio, nu (-)", "Default is 0.30 for the geomaterial."),
+            ("ec_simple", "Composite shaft modulus, Ec (kPa)", "Concrete/composite shaft modulus for simple analysis."),
             ("slurry_construction", "Slurry construction (Yes/No)", "If Yes, fmax uses K0 tan(0.75 phi') sigma'vo."),
         ),
     ),
@@ -241,6 +242,7 @@ class Type3IGMApp:
         self._set_input_var("gamma", self.inputs.gamma)
         self._set_input_var("n60", self.inputs.n60)
         self._set_input_var("nu", self.inputs.nu)
+        self._set_input_var("ec_simple", 25_000_000.0)
         self.input_vars["slurry_construction"].set("No")
         self._set_input_var("z_top_socket", self.inputs.z_top_socket)
         self._set_input_var("socket_length", self.inputs.socket_length)
@@ -320,7 +322,7 @@ class Type3IGMApp:
             esl_override=self._parse_optional_float("esl_override"),
             esm_override=self._parse_optional_float("esm_override"),
             eb_override=self._parse_optional_float("eb_override"),
-            ec_override=self._parse_optional_float("ec_override"),
+            ec_override=self._parse_ec_value(),
             su_override=self._parse_optional_float("su_override"),
             atmospheric_pressure=self._parse_required_float("atmospheric_pressure"),
             branch3_extension_mm=self._parse_required_float("branch3_extension_mm"),
@@ -351,7 +353,7 @@ class Type3IGMApp:
             f"Ec = {self.current_result.ec:.0f} kPa\n"
             f"xi = {self.current_result.xi:.3f}\n"
             f"lambda = {self.current_result.lambda_value:.3f}\n"
-            f"xi_lambda = {self.current_result.xi_lambda:.3f}\n"
+            f"zeta = {self.current_result.zeta:.3f}\n"
             f"muL = {self.current_result.mu_l:.3f}\n"
             f"Qb1 = {self.current_result.qb1:.1f} kN\n"
             f"Delta_wb = {self.current_result.branch2_delta_wb_m * 1000.0:.3f} mm\n\n"
@@ -410,6 +412,14 @@ class Type3IGMApp:
             raise ValidationError("Slurry construction must be Yes or No.")
 
         return value
+
+    def _parse_ec_value(self) -> float | None:
+        advanced_value = self.input_vars["ec_override"].get().strip()
+        simple_value = self.input_vars["ec_simple"].get().strip()
+        raw_value = advanced_value or simple_value
+        if not raw_value:
+            return None
+        return float(raw_value)
 
     def _set_text(self, widget: tk.Text, value: str) -> None:
         widget.configure(state="normal")

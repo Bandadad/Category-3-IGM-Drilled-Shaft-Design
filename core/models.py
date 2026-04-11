@@ -59,7 +59,7 @@ class CalculationResult:
     ec: float
     xi: float
     lambda_value: float
-    xi_lambda: float
+    zeta: float
     mu_l: float
     influence_factor: float
     qt1: float

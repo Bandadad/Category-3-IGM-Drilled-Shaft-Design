@@ -108,7 +108,7 @@ def calculate_capacity(inputs: CalculationInput) -> CalculationResult:
         ec=ec,
         xi=settlement["xi"],
         lambda_value=settlement["lambda_value"],
-        xi_lambda=settlement["xi_lambda"],
+        zeta=settlement["zeta"],
         mu_l=settlement["mu_l"],
         influence_factor=settlement["influence_factor"],
         qt1=settlement["qt1"],
@@ -177,12 +177,12 @@ def compute_settlement_parameters(
     esm_ratio = esm / esl
     lambda_value = 2.0 * (1.0 + nu) * ec / esl
 
-    # Draft transcription of the FHWA/Mayne-Harris closed-form parameter.
-    ln_xi_lambda = (
-        0.25 + ((2.5 * esm_ratio * (1.0 - nu) - 0.25) / xi)
-    ) * (2.0 * socket_length / diameter)
-    xi_lambda = math.exp(ln_xi_lambda)
-    mu_l = 2.0 * math.sqrt(2.0 / xi_lambda) * (socket_length / diameter)
+    # User-confirmed corrections to the retained Mayne-Harris transcription.
+    zeta = math.log(
+        (0.25 + (2.5 * esm_ratio * (1.0 - nu) - 0.25) * xi)
+        * (2.0 * socket_length / diameter)
+    )
+    mu_l = 2.0 * math.sqrt(2.0 / (zeta * lambda_value)) * (socket_length / diameter)
     tanh_mu_l = math.tanh(mu_l)
     cosh_mu_l = math.cosh(mu_l)
     mu_l_safe = max(mu_l, 1e-6)
@@ -204,12 +204,12 @@ def compute_settlement_parameters(
             * esm_ratio
             * tanh_mu_l
             * socket_length
-            / (xi * mu_l_safe * diameter)
+            / (zeta * mu_l_safe * diameter)
         )
     )
     influence_factor = numerator / denominator
 
-    qt1_denominator = 1.0 - 1.0 / (xi * cosh_mu_l * (1.0 - nu) * (1.0 + nu))
+    qt1_denominator = 1.0 - influence_factor / (xi * cosh_mu_l * (1.0 - nu) * (1.0 + nu))
     raw_qt1 = qs_max / max(qt1_denominator, 1e-6)
 
     # In the draft transcription, the closed-form expression can overshoot Qt,max.
@@ -235,7 +235,7 @@ def compute_settlement_parameters(
     return {
         "xi": xi,
         "lambda_value": lambda_value,
-        "xi_lambda": xi_lambda,
+        "zeta": zeta,
         "mu_l": mu_l,
         "influence_factor": influence_factor,
         "qt1": qt1,
