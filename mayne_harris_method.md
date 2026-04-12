@@ -193,7 +193,7 @@ where:
 - `sigma'_vo` = vertical effective stress at the elevation of interest
 - `pa = 101 kPa` = atmospheric pressure
 
-`sigma'_p = 0.2 * N60* pa`
+`sigma'_p = 0.2 * N60 * pa`
 
 
 For the codebase, isolate these as dedicated functions:
@@ -223,9 +223,14 @@ where:
 
 ### 3. Unit side resistance
 
-Confirmed FHWA summary equation:
+Confirmed implemented equation:
 
-`fmax = K0 * tan(phi') * sigma'_vo`
+`fmax = K0 * tan(delta) * sigma'_vo`
+
+where:
+
+- for drilled shafts without slurry reduction, `delta = phi'`
+- for slurry construction, `delta = 0.75 * phi'`
 
 Use `sigma'_vo` at the elevation chosen for the side-resistance calculation.
 
@@ -343,11 +348,9 @@ with:
 
 ### 3. Influence factor `I`
 
-Confirmed FHWA summary equation:
+Confirmed implemented equation:
 
-`I = 4(1 + nu) * [ 1 + ( 8 * tanh(muL) * L ) / ( pi * lambda * (1 - nu) * xi * (muL) * D ) ] / [ 4 / ( (1 - nu) * xi ) + ( 4 * pi * (Esm / EsL) * tanh(muL) * L ) / ( xi * (muL) * D ) ]`
-
-Use this exactly as implemented from the source once transcribed into code with care.
+`I = 4(1 + nu) * [ 1 + ( 8 * tanh(muL) * L ) / ( pi * lambda * (1 - nu) * xi * muL * D ) ] / [ 4 / ( (1 - nu) * xi ) + ( 4 * pi * (Esm / EsL) * tanh(muL) * L ) / ( zeta * muL * D ) ]`
 
 ### Parameter definitions
 
@@ -366,11 +369,11 @@ Use this exactly as implemented from the source once transcribed into code with 
 
 ### Additional definitions from FHWA
 
-`muL = 2 * sqrt(2 / xi_lambda) * (L / D)`
+`muL = 2 * sqrt(2 / (zeta * lambda)) * (L / D)`
 
 with:
 
-`ln(xi_lambda) = { [0.25 + (2.5 * (Esm / EsL) * (1 - nu) - 0.25) / xi] * (2L / D) }`
+`zeta = ln( [0.25 + (2.5 * (Esm / EsL) * (1 - nu) - 0.25) * xi] * (2L / D) )`
 
 and:
 
@@ -380,7 +383,11 @@ where:
 
 - `Ec` = Young’s modulus of composite shaft section
 
-> **Implementation note:** Transcribe these carefully from the project’s retained source PDF during coding. Keep the exact equation formatting in comments. Because OCR is error-prone for these expressions, unit tests and a worked example are required.
+The implemented defaults are:
+
+- `Esm / EsL = 0.5`
+- `Eb = 0.4 * EsL`
+- `xi = EsL / Eb = 2.5`
 
 ---
 
@@ -398,11 +405,17 @@ This is the same as `Qs` in the simple capacity model.
 
 ### 2. Load at end of Segment 1
 
-Confirmed FHWA summary equation:
+Confirmed implemented equation:
 
-`Qt1 = Qs_max / [ 1 - 1 / ( xi * cosh(muL) * (1 - nu) * (1 + nu) ) ]`
+`Qt1 = Qs_max / [ 1 - I / ( xi * cosh(muL) * (1 - nu) * (1 + nu) ) ]`
 
 This defines the point where full side resistance has mobilized.
+
+In the current implementation, the raw closed-form value is then bounded to keep Segment 2 physically meaningful:
+
+- `Qt1 >= Qs_max`
+- `Qt1 <= Qs_max + 0.75 * Qb_max`
+- `Qt1 < Qt_max = Qs_max + Qb_max`
 
 ### Settlement at end of Segment 1
 
@@ -434,7 +447,7 @@ where:
 
 ### 5. Settlement increment across Segment 2
 
-FHWA states that the settlement at the end of Segment 2 is approximately:
+The implemented Segment 2 settlement increment is:
 
 `wt2 = wt1 + Delta_wb`
 
@@ -442,7 +455,9 @@ where `Delta_wb` is the base-settlement increment due to the increase in base lo
 
 `Qb1 --> Qb_max`
 
-> **Implementation note:** Keep `Delta_wb` in a dedicated function and transcribe the exact source equation from the retained project PDF when coding. OCR often corrupts this equation.
+with:
+
+`Delta_wb = (Qt_max - Qt1) * (1 - nu) * (1 + nu) / (Eb * D)`
 
 For this project, the code should contain:
 
@@ -461,11 +476,11 @@ with settlement continuing beyond `wt2`.
 
 ### Recommended plotting rule
 
-Since the branch is conceptual, extend settlement from `wt2` to a user-friendly terminal value such as:
+Since the branch is conceptual, the implemented plotting rule extends settlement from `wt2` to:
 
-- `wt3_end = wt2 + max(0.01 * D, 5 mm)` in consistent units
+- `wt3_end = wt2 + max(branch3_extension_mm / 1000, 0.01 * D)` in meters
 
-or expose a plotting-only extension parameter in advanced mode.
+where `branch3_extension_mm` is an advanced plotting-only input.
 
 This extension does **not** change capacity. It only controls the visible plot length.
 
@@ -520,7 +535,9 @@ Compute:
 
 - `fmax`
 
-`fmax = K0 * tan(phi') * sigma'_vo_mid`
+`fmax = K0 * tan(delta) * sigma'_vo_mid`
+
+with `delta = phi'` for the default case and `delta = 0.75 * phi'` for slurry construction.
 
 ### Step 7
 
@@ -717,10 +734,12 @@ Before the app is treated as reliable, verify it against at least one worked exa
 
 ## Important Caution About Source Transcription
 
-Two parts of the FHWA-scanned source are especially vulnerable to OCR transcription error:
+The current local source of truth is the implemented version in `core/calculations.py`. If the retained FHWA scan is revisited later, compare it against the code carefully before changing any of the following:
 
-1. the exact `N60`-based correlations used before the confirmed `K0` equation
-2. the exact closed-form expression used for the Segment 2 base-settlement increment `Delta_wb`
+1. the `phi'` correlation from `N60` and `sigma'_vo`
+2. the closed-form settlement terms `zeta`, `muL`, and `I`
+3. the Segment 1 transition equation for `Qt1`
+4. the Segment 2 increment `Delta_wb`
 
 Therefore:
 
