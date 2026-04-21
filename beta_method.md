@@ -156,7 +156,7 @@ where:
 - `pa = 101 kPa` = atmospheric pressure
 
 `sigma'_p = 0.15 * N60 * pa` for gravelly soils
-`sigma'_p = 0.47*(N60)**m` for other soils. Use a default m=0.8, but this should be a user input. m=0.6 for clean quartzitic sand and 0.8 for sily sands to sandy silts.
+`sigma'_p = 0.47*(N60)**m*pa` for other soils. Use a default m=0.8, but this should be a user input. m=0.6 for clean quartzitic sand and 0.8 for silty sands to sandy silts.
 
 
 
@@ -501,19 +501,11 @@ Compute shaft resistance:
 
 Compute:
 
-- `su` at the tip
-
-`su = 0.23 * sigma'_vo_tip * OCR_tip^0.8`
-
-### Step 9
-
-Compute:
-
 - `qmax`
 
-`qmax = 9.33 * su`
+`qmax = min(57.5 * N60, 2873 kPa)`
 
-### Step 10
+### Step 9
 
 Compute:
 
@@ -521,13 +513,13 @@ Compute:
 
 `Qb = qmax * pi * D^2 / 4`
 
-### Step 11
+### Step 10
 
 Compute:
 
 - `Qtotal = Qs + Qb`
 
-### Step 12
+### Step 11
 
 For settlement plotting, compute:
 
@@ -542,7 +534,7 @@ For settlement plotting, compute:
 - `Qt_max`
 - `wt2`
 
-### Step 13
+### Step 12
 
 Build the three branches:
 
@@ -597,7 +589,6 @@ Segment 3 is idealized as a constant-load continuation and is likely conservativ
 - `phi'` = effective friction angle
 - `K0` = coefficient of earth pressure at rest
 - `fmax` = ultimate unit side resistance
-- `su` = operational undrained strength beneath base
 - `qmax` = ultimate unit base resistance
 
 ### Capacities
