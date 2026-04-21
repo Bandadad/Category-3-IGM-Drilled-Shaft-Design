@@ -20,6 +20,12 @@ The Mayne-Harris equations are centralized in `core/calculations.py`. The GUI on
 ./type3/bin/python app.py
 ```
 
+Beta-method cohesionless-soil version:
+
+```bash
+./type3/bin/python app_beta.py
+```
+
 ## Tests
 
 ```bash
