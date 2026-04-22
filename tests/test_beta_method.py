@@ -24,6 +24,10 @@ class BetaMethodEngineeringTests(unittest.TestCase):
         self.assertGreater(result.qb, 0.0)
         self.assertAlmostEqual(result.qtotal, result.qs + result.qb)
 
+    def test_design_capacity_uses_factored_components(self) -> None:
+        result = calculate_beta_capacity(self.inputs)
+        self.assertAlmostEqual(result.q_design, (0.55 * result.qs) + (0.50 * result.qb))
+
     def test_qmax_is_capped(self) -> None:
         result = calculate_beta_capacity(BetaCalculationInput(n60=100.0))
         self.assertAlmostEqual(result.qmax, 2873.0)

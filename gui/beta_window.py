@@ -56,6 +56,7 @@ ADVANCED_FIELDS: tuple[tuple[str, str, str], ...] = (
 RESULT_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("qs", "Qs (kN)", ".1f"),
     ("qb", "Qb (kN)", ".1f"),
+    ("q_design", "Qdesign (kN)", ".1f"),
     ("qtotal", "Qtotal (kN)", ".1f"),
     ("sigma_vo_eff_mid", "sigma'vo,mid (kPa)", ".2f"),
     ("sigma_vo_eff_tip", "sigma'vo,tip (kPa)", ".2f"),
@@ -217,10 +218,11 @@ class BetaMethodApp:
         summary.columnconfigure(1, weight=1)
         summary.columnconfigure(3, weight=1)
 
+        split_index = 9
         for index, (name, label, _) in enumerate(RESULT_FIELDS):
             self.result_vars[name] = tk.StringVar(value="--")
-            column = 0 if index < 9 else 2
-            row = index if index < 9 else index - 9
+            column = 0 if index < split_index else 2
+            row = index if index < split_index else index - split_index
             ttk.Label(summary, text=label, style="Label.TLabel").grid(row=row, column=column, sticky="w", pady=4)
             ttk.Label(summary, textvariable=self.result_vars[name], style="Value.TLabel").grid(row=row, column=column + 1, sticky="ew", padx=(12, 20), pady=4)
 
@@ -357,6 +359,7 @@ class BetaMethodApp:
             f"Esm = {self.current_result.esm:.0f} kPa\n"
             f"Eb = {self.current_result.eb:.0f} kPa\n"
             f"Ec = {self.current_result.ec:.0f} kPa\n"
+            f"Qdesign = {self.current_result.q_design:.1f} kN = 0.55 Qs + 0.50 Qb\n"
             f"xi = {self.current_result.xi:.3f}\n"
             f"lambda = {self.current_result.lambda_value:.3f}\n"
             f"zeta = {self.current_result.zeta:.3f}\n"

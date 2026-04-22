@@ -13,6 +13,8 @@ DEFAULT_EB_TO_ESL = 0.4
 DEFAULT_EC = 25_000_000.0  # kPa
 MIN_SIGMA = 1e-6
 QMAX_CAP_KPA = 2873.0
+SHAFT_RESISTANCE_FACTOR = 0.55
+BASE_RESISTANCE_FACTOR = 0.50
 
 
 def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResult:
@@ -70,6 +72,7 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
 
     qmax = min(57.5 * inputs.n60, QMAX_CAP_KPA)
     qb = qmax * base_area(inputs.diameter)
+    q_design = (SHAFT_RESISTANCE_FACTOR * qs) + (BASE_RESISTANCE_FACTOR * qb)
     qtotal = qs + qb
 
     esl = inputs.esl_override or (22.0 * inputs.atmospheric_pressure * (inputs.n60**0.82))
@@ -107,6 +110,7 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
         qs=qs,
         qmax=qmax,
         qb=qb,
+        q_design=q_design,
         qtotal=qtotal,
         esl=esl,
         esm=esm,

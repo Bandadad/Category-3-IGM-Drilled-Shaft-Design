@@ -52,6 +52,7 @@ class BetaCalculationResult:
     qs: float
     qmax: float
     qb: float
+    q_design: float
     qtotal: float
     esl: float
     esm: float
