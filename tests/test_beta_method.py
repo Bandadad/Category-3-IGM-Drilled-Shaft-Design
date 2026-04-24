@@ -5,9 +5,14 @@ from __future__ import annotations
 import math
 import unittest
 
-from core.beta_calculations import base_area, calculate_beta_capacity
+from core.beta_calculations import (
+    base_area,
+    calculate_beta_capacity,
+    compute_layer_overlap,
+    compute_layered_effective_stress,
+)
 from core.beta_load_settlement import generate_beta_three_branch_curve
-from core.beta_models import BetaCalculationInput
+from core.beta_models import BetaCalculationInput, BetaSoilLayer
 from core.beta_validation import BetaValidationError
 
 
@@ -29,7 +34,7 @@ class BetaMethodEngineeringTests(unittest.TestCase):
         self.assertAlmostEqual(result.q_design, (0.55 * result.qs) + (0.50 * result.qb))
 
     def test_qmax_is_capped(self) -> None:
-        result = calculate_beta_capacity(BetaCalculationInput(n60=100.0))
+        result = calculate_beta_capacity(BetaCalculationInput(layers=[BetaSoilLayer(thickness=12.0, gamma=18.0, n60=100.0)]))
         self.assertAlmostEqual(result.qmax, 2873.0)
 
     def test_invalid_inputs_raise(self) -> None:
@@ -53,13 +58,100 @@ class BetaMethodEngineeringTests(unittest.TestCase):
             self.assertLessEqual(first, second)
 
     def test_k0_is_bounded_by_kp(self) -> None:
-        result = calculate_beta_capacity(BetaCalculationInput(n60=80.0))
+        result = calculate_beta_capacity(BetaCalculationInput(layers=[BetaSoilLayer(thickness=12.0, gamma=18.0, n60=80.0)]))
         self.assertLessEqual(result.k0, result.kp)
 
     def test_gravelly_and_other_soils_use_different_sigma_p(self) -> None:
         gravelly = calculate_beta_capacity(BetaCalculationInput(soil_type="gravelly"))
         other = calculate_beta_capacity(BetaCalculationInput(soil_type="other"))
         self.assertNotAlmostEqual(gravelly.sigma_p_eff_mid, other.sigma_p_eff_mid)
+
+    def test_layered_effective_stress_above_groundwater(self) -> None:
+        layers = [
+            BetaSoilLayer(thickness=2.0, gamma=18.0, n60=20.0),
+            BetaSoilLayer(thickness=3.0, gamma=20.0, n60=30.0),
+        ]
+
+        stress = compute_layered_effective_stress(depth=4.0, groundwater_depth=10.0, layers=layers)
+
+        self.assertAlmostEqual(stress, (2.0 * 18.0) + (2.0 * 20.0))
+
+    def test_layered_effective_stress_splits_at_groundwater(self) -> None:
+        layers = [BetaSoilLayer(thickness=5.0, gamma=19.81, n60=20.0)]
+
+        stress = compute_layered_effective_stress(depth=4.0, groundwater_depth=2.0, layers=layers)
+
+        self.assertAlmostEqual(stress, (2.0 * 19.81) + (2.0 * 10.0))
+
+    def test_layer_overlap_handles_partial_layers(self) -> None:
+        overlap_top, overlap_bottom, overlap_length = compute_layer_overlap(
+            z_layer_top=0.0,
+            z_layer_bottom=3.0,
+            z_shaft_top=1.0,
+            z_tip=5.0,
+        )
+
+        self.assertAlmostEqual(overlap_top, 1.0)
+        self.assertAlmostEqual(overlap_bottom, 3.0)
+        self.assertAlmostEqual(overlap_length, 2.0)
+
+    def test_multilayer_capacity_sums_side_resistance_and_uses_tip_layer_for_base(self) -> None:
+        inputs = BetaCalculationInput(
+            layers=[
+                BetaSoilLayer(thickness=3.0, gamma=18.0, n60=20.0),
+                BetaSoilLayer(thickness=4.0, gamma=20.0, n60=40.0),
+            ],
+            z_top_shaft=1.0,
+            shaft_length=4.0,
+            diameter=1.0,
+            z_gwt=10.0,
+        )
+
+        result = calculate_beta_capacity(inputs)
+
+        self.assertEqual(len(result.layer_results), 2)
+        self.assertAlmostEqual(result.layer_results[0].shaft_overlap_length, 2.0)
+        self.assertAlmostEqual(result.layer_results[1].shaft_overlap_length, 2.0)
+        self.assertAlmostEqual(result.qs, sum(layer.qs for layer in result.layer_results))
+        self.assertEqual(result.tip_layer_index, 2)
+        self.assertAlmostEqual(result.qmax, 57.5 * 40.0)
+
+    def test_layer_results_use_layer_mid_depth_and_report_beta(self) -> None:
+        inputs = BetaCalculationInput(
+            layers=[
+                BetaSoilLayer(thickness=3.0, gamma=18.0, n60=20.0),
+                BetaSoilLayer(thickness=4.0, gamma=20.0, n60=40.0),
+            ],
+            z_top_shaft=1.0,
+            shaft_length=4.0,
+            diameter=1.0,
+            z_gwt=10.0,
+        )
+
+        result = calculate_beta_capacity(inputs)
+        first_layer = result.layer_results[0]
+        second_layer = result.layer_results[1]
+
+        self.assertAlmostEqual(first_layer.z_mid, 1.5)
+        self.assertAlmostEqual(second_layer.z_mid, 5.0)
+        self.assertAlmostEqual(first_layer.sigma_vo_eff_mid, 18.0 * 1.5)
+        self.assertAlmostEqual(second_layer.sigma_vo_eff_mid, (18.0 * 3.0) + (20.0 * 2.0))
+        self.assertAlmostEqual(first_layer.fmax, first_layer.beta * first_layer.sigma_vo_eff_mid)
+        self.assertGreater(first_layer.beta, 0.0)
+
+    def test_rejects_more_than_six_layers(self) -> None:
+        with self.assertRaises(BetaValidationError):
+            calculate_beta_capacity(BetaCalculationInput(layers=[BetaSoilLayer() for _ in range(7)]))
+
+    def test_rejects_profile_that_does_not_reach_tip(self) -> None:
+        with self.assertRaises(BetaValidationError):
+            calculate_beta_capacity(
+                BetaCalculationInput(
+                    layers=[BetaSoilLayer(thickness=2.0, gamma=18.0, n60=20.0)],
+                    z_top_shaft=1.0,
+                    shaft_length=4.0,
+                )
+            )
 
 
 if __name__ == "__main__":

@@ -6,15 +6,23 @@ from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
+class BetaSoilLayer:
+    """One soil layer in the beta-method profile."""
+
+    thickness: float = 12.0
+    gamma: float = 18.0
+    n60: float = 25.0
+
+
+@dataclass(slots=True)
 class BetaCalculationInput:
     """User inputs for the FHWA beta method in cohesionless soil."""
 
-    gamma: float = 18.0
+    layers: list[BetaSoilLayer] = field(default_factory=lambda: [BetaSoilLayer()])
     z_gwt: float = 2.0
     z_top_shaft: float = 1.5
     shaft_length: float = 10.0
     diameter: float = 1.0
-    n60: float = 25.0
     nu: float = 0.30
     slurry_construction: bool = False
     soil_type: str = "other"
@@ -33,9 +41,38 @@ class BetaCalculationInput:
 
 
 @dataclass(slots=True)
+class BetaLayerResult:
+    """Computed beta-method values for one soil layer."""
+
+    index: int
+    z_top: float
+    z_bottom: float
+    z_mid: float
+    shaft_overlap_top: float
+    shaft_overlap_bottom: float
+    shaft_overlap_length: float
+    gamma: float
+    n60: float
+    sigma_vo_eff_mid: float
+    sigma_p_eff_mid: float
+    ocr_mid: float
+    n1_60_mid: float
+    phi_prime_deg: float
+    k0: float
+    kp: float
+    beta: float
+    fmax: float
+    qs: float
+
+
+@dataclass(slots=True)
 class BetaCalculationResult:
     """Computed capacities and intermediate values for the beta method."""
 
+    layer_results: list[BetaLayerResult]
+    tip_layer_index: int
+    tip_layer_gamma: float
+    tip_layer_n60: float
     z_tip: float
     z_mid: float
     sigma_vo_eff_mid: float

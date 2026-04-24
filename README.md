@@ -14,6 +14,8 @@ Desktop application for drilled-shaft design in Type 3 / Category 3 intermediate
 
 The Mayne-Harris equations are centralized in `core/calculations.py`. The GUI only collects user inputs and presents outputs. The three-branched load-settlement curve is generated separately in `core/load_settlement.py`.
 
+The beta-method cohesionless-soil app is implemented separately in `core/beta_calculations.py`, `core/beta_models.py`, `core/beta_validation.py`, and `gui/beta_window.py`. Its simple mode supports 1 to 6 soil layers. Each layer has a thickness, unit weight, and `N60`; side resistance is computed for each layer portion intersecting the shaft, while base resistance uses the layer at the shaft tip.
+
 ## Running
 
 ```bash

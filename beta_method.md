@@ -86,15 +86,18 @@ The implementation should document these assumptions in the UI help text or docu
 
 ## Required Inputs
 
-The app should support a simple mode only.
+The app should support a simple mode with a layer table.
 
 ### Minimum inputs for simple mode
 
-- `gamma` = unit weight of soil
+- number of layers, 1 to 6
+- for each layer:
+  - `H` = layer thickness measured from grade downward
+  - `gamma` = layer unit weight
+  - `N60` = energy-corrected SPT blow count
 - `z_top_socket` = depth to top of shaft
 - `L` = shaft length
 - `D` = shaft diameter
-- `N60` = energy-corrected SPT blow count
 - `z_gwt` = groundwater depth
 - optional: `nu` = Poisson’s ratio, default `0.30`
 
@@ -121,7 +124,7 @@ Use:
 
 - `sigma_vo_eff_tip`
 
-If not entered directly, compute from geometry, total unit weight, and groundwater.
+If not entered directly, compute from geometry, layer unit weights, and groundwater.
 
 ### Suggested implementation
 
@@ -137,7 +140,7 @@ where:
 
 - `gamma_sub = gamma_sat - gamma_w`
 
-If the user enters only a single representative unit weight and groundwater depth, document the simplification clearly.
+For a layered profile, integrate effective stress from grade to the target depth through each layer. If an interval crosses groundwater, split the interval into above-water and submerged portions.
 
 ---
 
@@ -191,16 +194,20 @@ where:
 
 Confirmed implemented equation:
 
-`fmax = K0 * tan(phi') * sigma'_vo`
+`beta = K0 * tan(phi')`
+
+`fmax = beta * sigma'_vo`
 
 
 Use `sigma'_vo` at the elevation chosen for the side-resistance calculation.
 
 ### Recommended implementation choice
 
-For a simple representative-layer app:
+For the multi-layer app:
 
-- use `sigma'_vo = sigma'_vo_mid`
+- evaluate `sigma'_vo` at the midpoint of each soil layer
+- compute `fmax_i` independently for each layer segment
+- show each layer's `sigma'_vo`, `phi'`, `sigma'_p`, `OCR`, `K0`, `beta`, `fmax`, and `Qs_i` in the layer calculation table
 
 ---
 
@@ -215,6 +222,17 @@ where:
 - `D` = shaft diameter
 - `L` = socket length
 
+For the multi-layer implementation:
+
+`Qs_i = fmax_i * pi * D * L_i`
+
+`Qs = sum(Qs_i)`
+
+where:
+
+- `L_i` = length of shaft overlap within layer `i`
+- only layer portions between `z_top_socket` and `z_tip` contribute side resistance
+
 
 ---
 
@@ -223,6 +241,8 @@ where:
 Confirmed FHWA summary equation:
 
 `qmax = 57.5*N60 <=2873 kPa`
+
+For the multi-layer implementation, use the `N60` from the layer containing the shaft tip. If the tip falls exactly on an internal layer boundary, use the lower layer when available.
 
 ---
 

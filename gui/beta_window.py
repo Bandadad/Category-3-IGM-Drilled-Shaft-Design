@@ -7,7 +7,7 @@ from tkinter import messagebox, ttk
 
 from core.beta_calculations import calculate_beta_capacity
 from core.beta_load_settlement import generate_beta_three_branch_curve
-from core.beta_models import BetaCalculationInput
+from core.beta_models import BetaCalculationInput, BetaSoilLayer
 from core.beta_validation import BetaValidationError
 from plotting.beta_chart import show_beta_curve_plot
 
@@ -15,8 +15,6 @@ FIELD_GROUPS: tuple[tuple[str, tuple[tuple[str, str, str], ...]], ...] = (
     (
         "Material Properties",
         (
-            ("gamma", "Unit weight, gamma (kN/m^3)", "Representative soil unit weight used with groundwater depth."),
-            ("n60", "Corrected SPT N60 (blows/0.3 m)", "Primary FHWA beta-method input for cohesionless soil."),
             ("nu", "Poisson's ratio, nu (-)", "Default 0.30 for settlement calculations."),
             ("slurry_construction", "Slurry construction (Yes/No)", "If Yes, fmax uses K0 tan(0.75 phi') sigma'vo."),
         ),
@@ -87,6 +85,9 @@ class BetaMethodApp:
         self.inputs = BetaCalculationInput()
         self.current_result = None
         self.input_vars: dict[str, tk.StringVar] = {}
+        self.layer_count_var = tk.StringVar(value="1")
+        self.layer_vars: list[dict[str, tk.StringVar]] = []
+        self.layer_rows: list[tuple[ttk.Widget, ...]] = []
         self.result_vars: dict[str, tk.StringVar] = {}
         self.status_var = tk.StringVar(value="Ready.")
         self.slurry_var = tk.StringVar(value="No")
@@ -171,6 +172,7 @@ class BetaMethodApp:
 
     def _build_simple_fields(self, parent: ttk.Frame) -> None:
         current_row = 0
+        current_row = self._build_layer_fields(parent, current_row)
         for group_title, group_fields in FIELD_GROUPS:
             ttk.Label(parent, text=group_title, style="Section.TLabel").grid(row=current_row, column=0, sticky="w", pady=(0, 8))
             current_row += 1
@@ -183,6 +185,61 @@ class BetaMethodApp:
                 ttk.Label(parent, text=hint, style="Hint.TLabel").grid(row=current_row, column=0, columnspan=2, sticky="w", pady=(0, 8))
                 current_row += 1
         parent.columnconfigure(1, weight=1)
+
+    def _build_layer_fields(self, parent: ttk.Frame, start_row: int) -> int:
+        ttk.Label(parent, text="Layer Profile", style="Section.TLabel").grid(row=start_row, column=0, sticky="w", pady=(0, 8))
+        current_row = start_row + 1
+
+        ttk.Label(parent, text="Number of layers", style="Label.TLabel").grid(row=current_row, column=0, sticky="w")
+        selector = ttk.Combobox(
+            parent,
+            textvariable=self.layer_count_var,
+            values=("1", "2", "3", "4", "5", "6"),
+            state="readonly",
+            width=8,
+        )
+        selector.grid(row=current_row, column=1, sticky="ew", padx=(12, 0))
+        selector.bind("<<ComboboxSelected>>", lambda _event: self._sync_layer_rows())
+        current_row += 1
+
+        ttk.Label(
+            parent,
+            text="Layer thicknesses are measured downward from grade and must extend below the shaft tip.",
+            style="Hint.TLabel",
+        ).grid(row=current_row, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        current_row += 1
+
+        table = ttk.Frame(parent, style="Panel.TFrame")
+        table.grid(row=current_row, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        for column in range(4):
+            table.columnconfigure(column, weight=1 if column > 0 else 0)
+
+        headings = ("Layer", "Thickness (m)", "gamma (kN/m^3)", "N60")
+        for column, heading in enumerate(headings):
+            ttk.Label(table, text=heading, style="Label.TLabel").grid(row=0, column=column, sticky="w", padx=(0, 8), pady=(0, 4))
+
+        for index in range(6):
+            thickness_var = tk.StringVar()
+            gamma_var = tk.StringVar()
+            n60_var = tk.StringVar()
+            self.layer_vars.append({"thickness": thickness_var, "gamma": gamma_var, "n60": n60_var})
+
+            layer_label = ttk.Label(table, text=str(index + 1), style="Value.TLabel")
+            thickness_entry = ttk.Entry(table, textvariable=thickness_var, width=12)
+            gamma_entry = ttk.Entry(table, textvariable=gamma_var, width=12)
+            n60_entry = ttk.Entry(table, textvariable=n60_var, width=12)
+            widgets = (layer_label, thickness_entry, gamma_entry, n60_entry)
+            self.layer_rows.append(widgets)
+
+            row = index + 1
+            layer_label.grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
+            thickness_entry.grid(row=row, column=1, sticky="ew", padx=(0, 8), pady=2)
+            gamma_entry.grid(row=row, column=2, sticky="ew", padx=(0, 8), pady=2)
+            n60_entry.grid(row=row, column=3, sticky="ew", pady=2)
+
+        current_row += 1
+        self._sync_layer_rows()
+        return current_row + 1
 
     def _build_advanced_fields(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -232,13 +289,73 @@ class BetaMethodApp:
         self.warning_box.insert("1.0", "No warnings.")
         self.warning_box.configure(state="disabled")
 
+        self._build_layer_results_table(parent)
+
+    def _build_layer_results_table(self, parent: ttk.Frame) -> None:
+        ttk.Label(parent, text="Layer Calculations", style="Section.TLabel").grid(row=4, column=0, sticky="w", columnspan=2, pady=(18, 0))
+
+        table_frame = ttk.Frame(parent, style="Panel.TFrame")
+        table_frame.grid(row=5, column=0, sticky="nsew", columnspan=2, pady=(10, 0))
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+
+        columns = (
+            "layer",
+            "z_mid",
+            "overlap",
+            "sigma_vo",
+            "phi",
+            "sigma_p",
+            "ocr",
+            "k0",
+            "beta",
+            "fmax",
+            "qs",
+        )
+        self.layer_result_table = ttk.Treeview(table_frame, columns=columns, show="headings", height=6)
+        headings = {
+            "layer": "Layer",
+            "z_mid": "z mid (m)",
+            "overlap": "L_i (m)",
+            "sigma_vo": "sigma'v (kPa)",
+            "phi": "phi' (deg)",
+            "sigma_p": "sigma'p (kPa)",
+            "ocr": "OCR",
+            "k0": "K0",
+            "beta": "beta",
+            "fmax": "fmax (kPa)",
+            "qs": "Qs_i (kN)",
+        }
+        widths = {
+            "layer": 56,
+            "z_mid": 78,
+            "overlap": 72,
+            "sigma_vo": 102,
+            "phi": 82,
+            "sigma_p": 102,
+            "ocr": 70,
+            "k0": 64,
+            "beta": 64,
+            "fmax": 92,
+            "qs": 90,
+        }
+        for column in columns:
+            self.layer_result_table.heading(column, text=headings[column])
+            self.layer_result_table.column(column, width=widths[column], minwidth=widths[column], anchor="e", stretch=False)
+        self.layer_result_table.column("layer", anchor="center")
+
+        x_scroll = ttk.Scrollbar(table_frame, orient="horizontal", command=self.layer_result_table.xview)
+        self.layer_result_table.configure(xscrollcommand=x_scroll.set)
+        self.layer_result_table.grid(row=0, column=0, sticky="nsew")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
     def _build_notes(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text="Intermediate Values", style="Section.TLabel").grid(row=4, column=0, sticky="w", columnspan=2, pady=(18, 0))
+        ttk.Label(parent, text="Intermediate Values", style="Section.TLabel").grid(row=6, column=0, sticky="w", columnspan=2, pady=(18, 0))
         self.intermediate_box = tk.Text(parent, height=12, wrap="word", font=("TkFixedFont", 10), background="#f2f6f9", foreground="#173042", relief="flat", padx=10, pady=8)
-        self.intermediate_box.grid(row=5, column=0, sticky="nsew", columnspan=2, pady=(10, 0))
+        self.intermediate_box.grid(row=7, column=0, sticky="nsew", columnspan=2, pady=(10, 0))
         self.intermediate_box.insert("1.0", "Compute capacity to populate intermediate values.")
         self.intermediate_box.configure(state="disabled")
-        parent.rowconfigure(5, weight=1)
+        parent.rowconfigure(7, weight=1)
 
     def _build_status(self, parent: ttk.Frame) -> None:
         status = ttk.Frame(parent, style="Shell.TFrame", padding=(0, 10, 0, 0))
@@ -246,8 +363,19 @@ class BetaMethodApp:
         ttk.Label(status, textvariable=self.status_var, background="#e5ebf0", foreground="#506676").pack(anchor="w")
 
     def load_defaults(self) -> None:
-        self._set_input_var("gamma", self.inputs.gamma)
-        self._set_input_var("n60", self.inputs.n60)
+        self.layer_count_var.set(str(len(self.inputs.layers)))
+        for index, layer_vars in enumerate(self.layer_vars):
+            if index < len(self.inputs.layers):
+                layer = self.inputs.layers[index]
+                layer_vars["thickness"].set(str(layer.thickness))
+                layer_vars["gamma"].set(str(layer.gamma))
+                layer_vars["n60"].set(str(layer.n60))
+            else:
+                layer_vars["thickness"].set("")
+                layer_vars["gamma"].set("")
+                layer_vars["n60"].set("")
+        self._sync_layer_rows()
+
         self._set_input_var("nu", self.inputs.nu)
         self.input_vars["slurry_construction"].set("No")
         self._set_input_var("z_top_shaft", self.inputs.z_top_shaft)
@@ -277,9 +405,15 @@ class BetaMethodApp:
     def clear_inputs(self) -> None:
         for variable in self.input_vars.values():
             variable.set("")
+        self.layer_count_var.set("1")
+        for layer_vars in self.layer_vars:
+            for variable in layer_vars.values():
+                variable.set("")
+        self._sync_layer_rows()
         self.current_result = None
         self.plot_button.state(["disabled"])
         self._clear_result_labels()
+        self._clear_layer_result_table()
         self._set_text(self.warning_box, "No warnings.")
         self._set_text(self.intermediate_box, "Compute capacity to populate intermediate values.")
         self.status_var.set("Cleared inputs.")
@@ -313,12 +447,11 @@ class BetaMethodApp:
 
     def _collect_inputs(self) -> BetaCalculationInput:
         return BetaCalculationInput(
-            gamma=self._parse_required_float("gamma"),
+            layers=self._collect_layers(),
             z_gwt=self._parse_required_float("z_gwt"),
             z_top_shaft=self._parse_required_float("z_top_shaft"),
             shaft_length=self._parse_required_float("shaft_length"),
             diameter=self._parse_required_float("diameter"),
-            n60=self._parse_required_float("n60"),
             nu=self._parse_required_float("nu"),
             slurry_construction=self._parse_slurry_construction(),
             soil_type=self._parse_soil_type(),
@@ -347,10 +480,13 @@ class BetaMethodApp:
 
         warnings = self.current_result.warnings or ["No warnings."]
         self._set_text(self.warning_box, "\n".join(f"- {warning}" for warning in warnings))
+        self._populate_layer_result_table()
 
         intermediate_text = (
             f"z_mid = {self.current_result.z_mid:.2f} m\n"
             f"z_tip = {self.current_result.z_tip:.2f} m\n"
+            f"Tip layer = {self.current_result.tip_layer_index} (gamma = {self.current_result.tip_layer_gamma:.2f} kN/m^3, "
+            f"N60 = {self.current_result.tip_layer_n60:.2f})\n"
             f"sigma'p_mid = {self.current_result.sigma_p_eff_mid:.2f} kPa\n"
             f"sigma'p_tip = {self.current_result.sigma_p_eff_tip:.2f} kPa\n"
             f"OCR_mid = {self.current_result.ocr_mid:.3f}\n"
@@ -375,6 +511,34 @@ class BetaMethodApp:
         for variable in self.result_vars.values():
             variable.set("--")
 
+    def _populate_layer_result_table(self) -> None:
+        self._clear_layer_result_table()
+        assert self.current_result is not None
+        for item in self.current_result.layer_results:
+            self.layer_result_table.insert(
+                "",
+                "end",
+                values=(
+                    item.index,
+                    f"{item.z_mid:.2f}",
+                    f"{item.shaft_overlap_length:.2f}",
+                    f"{item.sigma_vo_eff_mid:.2f}",
+                    f"{item.phi_prime_deg:.2f}",
+                    f"{item.sigma_p_eff_mid:.2f}",
+                    f"{item.ocr_mid:.3f}",
+                    f"{item.k0:.3f}",
+                    f"{item.beta:.3f}",
+                    f"{item.fmax:.2f}",
+                    f"{item.qs:.1f}",
+                ),
+            )
+
+    def _clear_layer_result_table(self) -> None:
+        if not hasattr(self, "layer_result_table"):
+            return
+        for row_id in self.layer_result_table.get_children():
+            self.layer_result_table.delete(row_id)
+
     def _set_input_var(self, name: str, value: float | int) -> None:
         self.input_vars[name].set(str(value))
 
@@ -392,6 +556,46 @@ class BetaMethodApp:
             return
 
         ttk.Entry(parent, textvariable=variable, width=18).grid(row=row, column=1, sticky="ew", padx=(12, 0))
+
+    def _sync_layer_rows(self) -> None:
+        try:
+            active_count = int(self.layer_count_var.get())
+        except ValueError:
+            active_count = 1
+        active_count = min(max(active_count, 1), 6)
+        self.layer_count_var.set(str(active_count))
+
+        for index, widgets in enumerate(self.layer_rows):
+            if index < active_count:
+                for widget in widgets:
+                    widget.grid()
+            else:
+                for widget in widgets:
+                    widget.grid_remove()
+        self.current_result = None
+        self._clear_layer_result_table()
+        if hasattr(self, "plot_button"):
+            self.plot_button.state(["disabled"])
+
+    def _collect_layers(self) -> list[BetaSoilLayer]:
+        active_count = int(self.layer_count_var.get())
+        layers: list[BetaSoilLayer] = []
+        for index in range(active_count):
+            layer_vars = self.layer_vars[index]
+            layers.append(
+                BetaSoilLayer(
+                    thickness=self._parse_layer_float(index, "thickness", "thickness"),
+                    gamma=self._parse_layer_float(index, "gamma", "unit weight"),
+                    n60=self._parse_layer_float(index, "n60", "N60"),
+                )
+            )
+        return layers
+
+    def _parse_layer_float(self, layer_index: int, field_name: str, label: str) -> float:
+        value = self.layer_vars[layer_index][field_name].get().strip()
+        if not value:
+            raise BetaValidationError(f"Layer {layer_index + 1} {label} is required.")
+        return float(value)
 
     def _parse_required_float(self, field_name: str) -> float:
         value = self.input_vars[field_name].get().strip()

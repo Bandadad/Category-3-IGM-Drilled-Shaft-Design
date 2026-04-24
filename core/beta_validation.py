@@ -14,14 +14,22 @@ class BetaValidationError(ValueError):
 def validate_beta_inputs(inputs: BetaCalculationInput) -> list[str]:
     """Validate beta-method inputs and return non-fatal warning messages."""
 
-    if inputs.gamma <= 0:
-        raise BetaValidationError("Unit weight must be positive.")
+    if not inputs.layers:
+        raise BetaValidationError("At least one soil layer is required.")
+    if len(inputs.layers) > 6:
+        raise BetaValidationError("The beta-method layer table supports a maximum of 6 layers.")
+    for index, layer in enumerate(inputs.layers, start=1):
+        if layer.thickness <= 0:
+            raise BetaValidationError(f"Layer {index} thickness must be positive.")
+        if layer.gamma <= 0:
+            raise BetaValidationError(f"Layer {index} unit weight must be positive.")
+        if layer.n60 <= 0:
+            raise BetaValidationError(f"Layer {index} N60 must be positive.")
+
     if inputs.diameter <= 0:
         raise BetaValidationError("Shaft diameter must be positive.")
     if inputs.shaft_length <= 0:
         raise BetaValidationError("Shaft length must be positive.")
-    if inputs.n60 <= 0:
-        raise BetaValidationError("N60 must be positive.")
     if inputs.nu < 0.0 or inputs.nu >= 0.5:
         raise BetaValidationError("Poisson's ratio must be between 0.0 and 0.5.")
     if inputs.z_top_shaft < 0:
@@ -38,6 +46,8 @@ def validate_beta_inputs(inputs: BetaCalculationInput) -> list[str]:
         raise BetaValidationError("Plot discretization must be at least 2 points per segment.")
     if inputs.soil_type not in {"gravelly", "other"}:
         raise BetaValidationError("Soil type must be either 'gravelly' or 'other'.")
+    if sum(layer.thickness for layer in inputs.layers) < inputs.z_top_shaft + inputs.shaft_length:
+        raise BetaValidationError("Layer thicknesses must extend to or below the shaft tip.")
 
     optional_positive_fields = {
         "sigma_vo_eff_mid_override": "Direct mid-depth effective stress",
@@ -58,11 +68,18 @@ def validate_beta_inputs(inputs: BetaCalculationInput) -> list[str]:
             raise BetaValidationError("Direct friction angle must be between 0 and 60 degrees.")
 
     warnings: list[str] = []
-    if inputs.n60 > 50:
+    if any(layer.n60 > 50 for layer in inputs.layers):
         warnings.append("FHWA beta-method guidance is primarily intended for cohesionless soils with N60 up to 50.")
-    if inputs.n60 > 100:
+    if any(layer.n60 > 100 for layer in inputs.layers):
         warnings.append("Mayne-Harris should be used with caution for N60 above 100.")
     if inputs.z_gwt > inputs.z_top_shaft + inputs.shaft_length:
         warnings.append("Groundwater is below the shaft tip; effective stress is being treated as total stress over the full shaft.")
+    tip_depth = inputs.z_top_shaft + inputs.shaft_length
+    running_depth = 0.0
+    for layer in inputs.layers[:-1]:
+        running_depth += layer.thickness
+        if abs(running_depth - tip_depth) <= 0.01:
+            warnings.append("Shaft tip is within 0.01 m of a layer boundary; base resistance uses the lower layer when available.")
+            break
 
     return warnings
