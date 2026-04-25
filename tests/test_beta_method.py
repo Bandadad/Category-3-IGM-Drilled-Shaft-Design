@@ -10,6 +10,7 @@ from core.beta_calculations import (
     calculate_beta_capacity,
     compute_layer_overlap,
     compute_layered_effective_stress,
+    estimate_soil_modulus_from_n60,
 )
 from core.beta_load_settlement import generate_beta_three_branch_curve
 from core.beta_models import BetaCalculationInput, BetaSoilLayer
@@ -116,6 +117,33 @@ class BetaMethodEngineeringTests(unittest.TestCase):
         self.assertEqual(result.tip_layer_index, 2)
         self.assertAlmostEqual(result.qmax, 57.5 * 40.0)
 
+    def test_settlement_moduli_use_tip_and_shaft_midpoint_layers(self) -> None:
+        inputs = BetaCalculationInput(
+            layers=[
+                BetaSoilLayer(thickness=3.0, gamma=18.0, n60=10.0),
+                BetaSoilLayer(thickness=4.0, gamma=20.0, n60=30.0),
+                BetaSoilLayer(thickness=5.0, gamma=21.0, n60=60.0),
+            ],
+            z_top_shaft=1.0,
+            shaft_length=8.0,
+            diameter=1.0,
+            z_gwt=20.0,
+        )
+
+        result = calculate_beta_capacity(inputs)
+
+        self.assertEqual(result.shaft_mid_layer_index, 2)
+        self.assertEqual(result.tip_layer_index, 3)
+        self.assertAlmostEqual(
+            result.esl,
+            estimate_soil_modulus_from_n60(n60=60.0, atmospheric_pressure=inputs.atmospheric_pressure),
+        )
+        self.assertAlmostEqual(
+            result.esm,
+            estimate_soil_modulus_from_n60(n60=30.0, atmospheric_pressure=inputs.atmospheric_pressure),
+        )
+        self.assertAlmostEqual(result.eb, 0.4 * result.esl)
+
     def test_layer_results_use_layer_mid_depth_and_report_beta(self) -> None:
         inputs = BetaCalculationInput(
             layers=[
@@ -132,10 +160,10 @@ class BetaMethodEngineeringTests(unittest.TestCase):
         first_layer = result.layer_results[0]
         second_layer = result.layer_results[1]
 
-        self.assertAlmostEqual(first_layer.z_mid, 1.5)
-        self.assertAlmostEqual(second_layer.z_mid, 5.0)
-        self.assertAlmostEqual(first_layer.sigma_vo_eff_mid, 18.0 * 1.5)
-        self.assertAlmostEqual(second_layer.sigma_vo_eff_mid, (18.0 * 3.0) + (20.0 * 2.0))
+        self.assertAlmostEqual(first_layer.z_mid, 2.0)
+        self.assertAlmostEqual(second_layer.z_mid, 4.0)
+        self.assertAlmostEqual(first_layer.sigma_vo_eff_mid, 18.0 * 2.0)
+        self.assertAlmostEqual(second_layer.sigma_vo_eff_mid, (18.0 * 3.0) + (20.0 * 1.0))
         self.assertAlmostEqual(first_layer.fmax, first_layer.beta * first_layer.sigma_vo_eff_mid)
         self.assertGreater(first_layer.beta, 0.0)
 

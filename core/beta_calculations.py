@@ -8,7 +8,6 @@ from .beta_models import BetaCalculationInput, BetaCalculationResult, BetaLayerR
 from .beta_validation import validate_beta_inputs
 
 GAMMA_WATER = 9.81  # kN/m^3
-DEFAULT_ESM_TO_ESL = 0.5
 DEFAULT_EB_TO_ESL = 0.4
 DEFAULT_EC = 25_000_000.0  # kPa
 MIN_SIGMA = 1e-6
@@ -23,9 +22,10 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
     warnings = validate_beta_inputs(inputs)
     assumptions = [
         "Side resistance is computed independently for each layer portion intersecting the shaft.",
-        "Layer beta-method values use effective vertical stress at each layer midpoint.",
+        "Layer beta-method values use effective vertical stress at the midpoint of each shaft-overlap segment.",
         "Side resistance uses each layer's unit side resistance over only the shaft length intersecting that layer.",
         "Base resistance follows qmax = 57.5 N60 capped at 2873 kPa and uses only the layer containing the shaft tip.",
+        "EsL uses the N60 of the material along the socket at base level; Esm uses the N60 of the layer containing the shaft midpoint.",
         "For non-gravelly soils, the preconsolidation-pressure correlation is implemented as sigma'p = 0.47 N60^m pa to preserve units.",
         "Segment 1 through Segment 3 settlement terms retain the project's FHWA/Mayne-Harris transcription used elsewhere in this repository.",
     ]
@@ -43,7 +43,10 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
             z_tip=z_tip,
         )
 
-        layer_mid = 0.5 * (z_layer_top + z_layer_bottom)
+        if overlap_length > 0.0:
+            layer_mid = 0.5 * (overlap_top + overlap_bottom)
+        else:
+            layer_mid = 0.5 * (z_layer_top + z_layer_bottom)
         sigma_segment = (
             inputs.sigma_vo_eff_mid_override
             if inputs.sigma_vo_eff_mid_override is not None
@@ -108,6 +111,7 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
         )
 
     tip_layer_index, _, _, tip_layer = find_layer_at_depth(layer_depths, z_tip)
+    shaft_mid_layer_index, _, _, shaft_mid_layer = find_layer_at_depth(layer_depths, z_mid)
     sigma_tip = (
         inputs.sigma_vo_eff_tip_override
         if inputs.sigma_vo_eff_tip_override is not None
@@ -129,7 +133,6 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
 
     qs = sum(layer_result.qs for layer_result in layer_results)
     side_layer_results = [item for item in layer_results if item.shaft_overlap_length > 0.0]
-    weighted_n60 = _weighted_average((item.n60, item.shaft_overlap_length) for item in side_layer_results)
     sigma_mid = _weighted_average((item.sigma_vo_eff_mid, item.shaft_overlap_length) for item in side_layer_results)
     sigma_p_mid = _weighted_average((item.sigma_p_eff_mid, item.shaft_overlap_length) for item in side_layer_results)
     ocr_mid = _weighted_average((item.ocr_mid, item.shaft_overlap_length) for item in side_layer_results)
@@ -144,8 +147,14 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
     q_design = (SHAFT_RESISTANCE_FACTOR * qs) + (BASE_RESISTANCE_FACTOR * qb)
     qtotal = qs + qb
 
-    esl = inputs.esl_override or (22.0 * inputs.atmospheric_pressure * (weighted_n60**0.82))
-    esm = inputs.esm_override or (DEFAULT_ESM_TO_ESL * esl)
+    esl = inputs.esl_override or estimate_soil_modulus_from_n60(
+        n60=tip_layer.n60,
+        atmospheric_pressure=inputs.atmospheric_pressure,
+    )
+    esm = inputs.esm_override or estimate_soil_modulus_from_n60(
+        n60=shaft_mid_layer.n60,
+        atmospheric_pressure=inputs.atmospheric_pressure,
+    )
     eb = inputs.eb_override or (DEFAULT_EB_TO_ESL * esl)
     ec = inputs.ec_override or DEFAULT_EC
 
@@ -167,6 +176,8 @@ def calculate_beta_capacity(inputs: BetaCalculationInput) -> BetaCalculationResu
         tip_layer_index=tip_layer_index,
         tip_layer_gamma=tip_layer.gamma,
         tip_layer_n60=tip_layer.n60,
+        shaft_mid_layer_index=shaft_mid_layer_index,
+        shaft_mid_layer_n60=shaft_mid_layer.n60,
         z_tip=z_tip,
         z_mid=z_mid,
         sigma_vo_eff_mid=sigma_mid,
@@ -339,6 +350,12 @@ def compute_kp(phi_rad: float) -> float:
     """Compute the passive earth pressure coefficient."""
 
     return math.tan((math.pi / 4.0) + (phi_rad / 2.0)) ** 2
+
+
+def estimate_soil_modulus_from_n60(*, n60: float, atmospheric_pressure: float) -> float:
+    """Estimate soil modulus using the retained Es = 22 pa N60^0.82 correlation."""
+
+    return 22.0 * atmospheric_pressure * (n60**0.82)
 
 
 def base_area(diameter: float) -> float:

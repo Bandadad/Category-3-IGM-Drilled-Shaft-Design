@@ -43,7 +43,7 @@ ADVANCED_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("phi_prime_override_deg", "phi' override (deg)", "Leave blank to use the overburden-corrected SPT correlation."),
     ("k0_override", "K0 override (-)", "Leave blank to compute K0 and bound it by Kp."),
     ("esl_override", "EsL override (kPa)", "Default correlation: 22 pa N60^0.82."),
-    ("esm_override", "Esm override (kPa)", "Default is 0.5 EsL."),
+    ("esm_override", "Esm override (kPa)", "Default correlation uses N60 from the shaft-midpoint layer."),
     ("eb_override", "Eb override (kPa)", "Default is 0.4 EsL."),
     ("ec_override", "Ec override (kPa)", "Default composite shaft modulus is 25,000,000 kPa."),
     ("atmospheric_pressure", "Atmospheric pressure, pa (kPa)", "Default 101 kPa."),
@@ -61,11 +61,6 @@ RESULT_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("sigma_p_eff_mid", "sigma'p (kPa)", ".2f"),
     ("ocr_mid", "OCRmid (-)", ".3f"),
     ("n1_60_mid", "(N1)60,mid (-)", ".2f"),
-    ("phi_prime_deg", "phi' (deg)", ".2f"),
-    ("k0", "K0 (-)", ".3f"),
-    ("kp", "Kp (-)", ".3f"),
-    ("fmax", "fmax (kPa)", ".2f"),
-    ("qmax", "qmax (kPa)", ".2f"),
     ("esl", "EsL (kPa)", ".0f"),
     ("qt1", "Qt1 (kN)", ".1f"),
     ("wt1_m", "wt1 (mm)", "mm"),
@@ -304,26 +299,32 @@ class BetaMethodApp:
             "z_mid",
             "overlap",
             "sigma_vo",
+            "n1_60",
             "phi",
             "sigma_p",
             "ocr",
             "k0",
+            "kp",
             "beta",
             "fmax",
+            "qmax",
             "qs",
         )
         self.layer_result_table = ttk.Treeview(table_frame, columns=columns, show="headings", height=6)
         headings = {
             "layer": "Layer",
-            "z_mid": "z mid (m)",
+            "z_mid": "z seg mid (m)",
             "overlap": "L_i (m)",
             "sigma_vo": "sigma'v (kPa)",
+            "n1_60": "(N1)60",
             "phi": "phi' (deg)",
             "sigma_p": "sigma'p (kPa)",
             "ocr": "OCR",
             "k0": "K0",
+            "kp": "Kp",
             "beta": "beta",
             "fmax": "fmax (kPa)",
+            "qmax": "qmax (kPa)",
             "qs": "Qs_i (kN)",
         }
         widths = {
@@ -331,12 +332,15 @@ class BetaMethodApp:
             "z_mid": 78,
             "overlap": 72,
             "sigma_vo": 102,
+            "n1_60": 78,
             "phi": 82,
             "sigma_p": 102,
             "ocr": 70,
             "k0": 64,
+            "kp": 64,
             "beta": 64,
             "fmax": 92,
+            "qmax": 92,
             "qs": 90,
         }
         for column in columns:
@@ -483,8 +487,10 @@ class BetaMethodApp:
         self._populate_layer_result_table()
 
         intermediate_text = (
-            f"z_mid = {self.current_result.z_mid:.2f} m\n"
+            f"z_shaft_mid = {self.current_result.z_mid:.2f} m\n"
             f"z_tip = {self.current_result.z_tip:.2f} m\n"
+            f"Shaft midpoint layer = {self.current_result.shaft_mid_layer_index} "
+            f"(N60 = {self.current_result.shaft_mid_layer_n60:.2f})\n"
             f"Tip layer = {self.current_result.tip_layer_index} (gamma = {self.current_result.tip_layer_gamma:.2f} kN/m^3, "
             f"N60 = {self.current_result.tip_layer_n60:.2f})\n"
             f"sigma'p_mid = {self.current_result.sigma_p_eff_mid:.2f} kPa\n"
@@ -515,6 +521,7 @@ class BetaMethodApp:
         self._clear_layer_result_table()
         assert self.current_result is not None
         for item in self.current_result.layer_results:
+            qmax_display = f"{self.current_result.qmax:.2f}" if item.index == self.current_result.tip_layer_index else "-"
             self.layer_result_table.insert(
                 "",
                 "end",
@@ -523,12 +530,15 @@ class BetaMethodApp:
                     f"{item.z_mid:.2f}",
                     f"{item.shaft_overlap_length:.2f}",
                     f"{item.sigma_vo_eff_mid:.2f}",
+                    f"{item.n1_60_mid:.2f}",
                     f"{item.phi_prime_deg:.2f}",
                     f"{item.sigma_p_eff_mid:.2f}",
                     f"{item.ocr_mid:.3f}",
                     f"{item.k0:.3f}",
+                    f"{item.kp:.3f}",
                     f"{item.beta:.3f}",
                     f"{item.fmax:.2f}",
+                    qmax_display,
                     f"{item.qs:.1f}",
                 ),
             )

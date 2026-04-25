@@ -73,6 +73,8 @@ class BetaCalculationResult:
     tip_layer_index: int
     tip_layer_gamma: float
     tip_layer_n60: float
+    shaft_mid_layer_index: int
+    shaft_mid_layer_n60: float
     z_tip: float
     z_mid: float
     sigma_vo_eff_mid: float
